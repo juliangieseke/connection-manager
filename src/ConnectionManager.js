@@ -95,11 +95,30 @@ export default class ConnectionManager {
        */
       handleConnectionError: event => {
         this.dequeue(event.target);
+      },
+
+      /**
+       * Closes low prio connections until a slot is free
+       *
+       * @param {int} threshold
+       * @return {bool} - true if there is a free slot, false if not.
+       */
+      closeConnections(threshold) {
+        let item = this.openList.last();
+        while (
+          this.openList.size >= maxConnections - 1 &&
+          item.priority < threshold
+        ) {
+          this.instance.dequeue(item.connection);
+          item = this.openList.last();
+        }
+        return this.openList.size <= maxConnections - 1;
       }
     };
 
     this.enqueue = this.enqueue.bind(context);
     this.dequeue = this.dequeue.bind(context);
+    this.force = this.force.bind(context);
   }
 
   /**
@@ -116,12 +135,21 @@ export default class ConnectionManager {
     }
     const item = new ConnectionQueueItem(connection, priority);
 
+    // default case: connection is initialized, but not yet started
     if (connection.state === AbstractConnection.INIT) {
       this.waitingList = this.waitingList.enqueue(item);
     }
 
+    // theoreticly it is possible to open connections on your own
+    // and then add them to the manager, if this happens we have
+    // to deal with them correctly
     if (connection.state === AbstractConnection.OPEN) {
-      this.openList = this.openList.enqueue(item);
+      if (this.closeConnections(item.priority)) {
+        this.openList = this.openList.enqueue(item);
+      } else {
+        connection.abort();
+        return false;
+      }
     }
 
     connection.addListener(ConnectionEvent.ABORT, this.handleConnectionAbort);
@@ -169,5 +197,27 @@ export default class ConnectionManager {
     }
 
     this.next();
+  }
+
+  /**
+   * Immediatly opens a given connection, cancels other connections if needed
+   *
+   * @this ConnectionManager~Context
+   * @param {AbstractConnection} connection
+   */
+  force(connection) {
+    const item = new ConnectionQueueItem(connection, Number.MAX_SAFE_INTEGER);
+
+    if (!this.closeConnections(item.priority)) {
+      return false;
+    }
+
+    if (item.connection.state === AbstractConnection.INIT) {
+      item.connection.open();
+    }
+
+    if (item.connection.state === AbstractConnection.OPEN) {
+      context.openList = context.openList.enqueue(item);
+    }
   }
 }
