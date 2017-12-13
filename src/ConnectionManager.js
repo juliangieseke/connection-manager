@@ -172,4 +172,26 @@ export default class ConnectionManager {
     this.next();
   }
 
+  /**
+   * Immediatly opens a given connection, cancels other connections if needed
+   * 
+   * @this ConnectionManager~Context
+   * @param {AbstractConnection} connection 
+   */
+  force(connection) {
+    const item = new ConnectionQueueItem(connection, Number.MAX_SAFE_INTEGER);
+
+    while (this.openConnections.size >= maxConnections-1) {
+      this.instance.dequeue(this.openConnections.last().connection);
+    }
+
+    if (item.connection.state === AbstractConnection.INIT) {
+      item.connection.open();
+    }
+
+    if (item.connection.state === AbstractConnection.OPEN) {
+      context.openConnections = context.openConnections.enqueue(item);
+    }
+  }
+
 }

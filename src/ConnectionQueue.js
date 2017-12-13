@@ -44,6 +44,13 @@ export default class ConnectionQueue {
   first() {
     return this.connections.first();
   }
+  /**
+   * returns the last connection
+   * @return {AbstractConnection} - last connection
+   */
+  last() {
+    return this.connections.last();
+  }
 
   /**
    * Adds given connection to queue
