@@ -122,7 +122,7 @@ export default class ConnectionManager {
        * @param {AbstractConnection} connection
        */
       openConnection(connection) {
-        connection.open();
+        connection.open({"Authentication": "Bearer TOKEN"});
       },
 
       addListeners(connection) {
