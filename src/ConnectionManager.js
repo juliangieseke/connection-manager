@@ -29,18 +29,18 @@ export default class ConnectionManager {
       instance: this,
 
       /**
-       * @property {ConnectionQueue} waitingConnections
+       * @property {ConnectionQueue} waitingList
        * @description List of waiting connections ordered by priority
-       * @name ConnectionManager~Context#waitingConnections
+       * @name ConnectionManager~Context#waitingList
        */
-      waitingConnections: List(),
+      waitingList: List(),
 
       /**
-       * @property {List} openConnections
+       * @property {List} openList
        * @description List of open connections
        * @name ConnectionManager~Context#next
        */
-      openConnections: List(),
+      openList: List(),
 
       /**
        * @property {function} next
@@ -49,13 +49,13 @@ export default class ConnectionManager {
        */
       next() {
         if (
-          context.openConnections.size >= maxConnections ||
-          context.waitingConnections.size === 0
+          context.openList.size >= maxConnections ||
+          context.waitingList.size === 0
         ) {
           return;
         }
 
-        const item = context.waitingConnections.first();
+        const item = context.waitingList.first();
 
         if (item.connection.state === AbstractConnection.INIT) {
           item.connection.open();
@@ -63,14 +63,14 @@ export default class ConnectionManager {
 
         if (
           item.connection.state === AbstractConnection.OPEN &&
-          !context.openConnections.some(listItem => listItem.equals(item))
+          !context.openList.some(listItem => listItem.equals(item))
         ) {
-          context.openConnections = context.openConnections
+          context.openList = context.openList
             .push(item)
             .sortBy(listItem => -1 * listItem.priority);
         }
 
-        context.waitingConnections = context.waitingConnections.shift(item);
+        context.waitingList = context.waitingList.shift(item);
 
         context.next();
       },
@@ -120,16 +120,16 @@ export default class ConnectionManager {
     const item = new ConnectionQueueItem(connection, priority);
 
     if (connection.state === AbstractConnection.INIT) {
-      this.waitingConnections = this.waitingConnections
+      this.waitingList = this.waitingList
         .push(item)
         .sortBy(listItem => -1 * listItem.priority);
     }
 
     if (connection.state === AbstractConnection.OPEN) {
-      if (this.openConnections.some(listItem => listItem.equals(item))) {
+      if (this.openList.some(listItem => listItem.equals(item))) {
         return false;
       }
-      this.openConnections = this.openConnections
+      this.openList = this.openList
         .push(item)
         .sortBy(listItem => -1 * listItem.priority);
     }
@@ -176,14 +176,14 @@ export default class ConnectionManager {
     );
 
     if (connection.state === AbstractConnection.INIT) {
-      this.waitingConnections = this.waitingConnections.filter(
+      this.waitingList = this.waitingList.filter(
         listItem => !listItem.equals(item)
       );
     }
 
     if (connection.state === AbstractConnection.OPEN) {
       connection.close();
-      this.openConnections = this.openConnections.filter(
+      this.openList = this.openList.filter(
         listItem => !listItem.equals(item)
       );
       this.next();
