@@ -21,7 +21,7 @@ describe("ConnectionManager", () => {
     connection3 = new AbstractConnection("http://example.com/3");
   });
 
-  describe("#queue", function() {
+  describe("#queue", function () {
     it("adds abort listeners to new connection", () => {
       ConnectionManager.enqueue(connection1);
 
@@ -83,7 +83,7 @@ describe("ConnectionManager", () => {
     });
   });
 
-  describe("#dequeue", function() {
+  describe("#dequeue", function () {
     beforeEach(() => {
       ConnectionManager.enqueue(connection1);
       ConnectionManager.enqueue(connection2);

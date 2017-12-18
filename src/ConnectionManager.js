@@ -1,5 +1,5 @@
+import { List } from "immutable";
 import { AbstractConnection, ConnectionEvent } from "@dcos/connections";
-import ConnectionQueue from "./ConnectionQueue";
 import ConnectionQueueItem from "./ConnectionQueueItem";
 
 /**
@@ -33,14 +33,14 @@ export default class ConnectionManager {
        * @description List of waiting connections ordered by priority
        * @name ConnectionManager~Context#waitingConnections
        */
-      waitingConnections: new ConnectionQueue(),
+      waitingConnections: List(),
 
       /**
        * @property {List} openConnections
        * @description List of open connections
        * @name ConnectionManager~Context#next
        */
-      openConnections: new ConnectionQueue(),
+      openConnections: List(),
 
       /**
        * @property {function} next
@@ -61,8 +61,13 @@ export default class ConnectionManager {
           item.connection.open();
         }
 
-        if (item.connection.state === AbstractConnection.OPEN) {
-          context.openConnections = context.openConnections.enqueue(item);
+        if (
+          item.connection.state === AbstractConnection.OPEN &&
+          !context.openConnections.some(listItem => listItem.equals(item))
+        ) {
+          context.openConnections = context.openConnections
+            .push(item)
+            .sortBy(listItem => -1 * listItem.priority);
         }
 
         context.waitingConnections = context.waitingConnections.shift(item);
@@ -75,27 +80,24 @@ export default class ConnectionManager {
        * @name ConnectionManager~Context#handleConnectionAbort
        * @param {ConnectionEvent} event
        */
-      handleConnectionAbort: event => {
-        this.dequeue(event.target);
-      },
+      handleConnectionAbort: event =>
+        this.dequeue(event.target),
 
       /**
        * @property {function} handleConnectionComplete
        * @name ConnectionManager~Context#handleConnectionComplete
        * @param {ConnectionEvent} event
        */
-      handleConnectionComplete: event => {
-        this.dequeue(event.target);
-      },
+      handleConnectionComplete: event =>
+        this.dequeue(event.target),
 
       /**
        * @property {function} handleConnectionError
        * @name ConnectionManager~Context#handleConnectionError
        * @param {ConnectionEvent} event
        */
-      handleConnectionError: event => {
-        this.dequeue(event.target);
-      }
+      handleConnectionError: event =>
+        this.dequeue(event.target),
     };
 
     this.enqueue = this.enqueue.bind(context);
@@ -114,14 +116,22 @@ export default class ConnectionManager {
     if (connection.state === AbstractConnection.CLOSED) {
       return false;
     }
+
     const item = new ConnectionQueueItem(connection, priority);
 
     if (connection.state === AbstractConnection.INIT) {
-      this.waitingConnections = this.waitingConnections.enqueue(item);
+      this.waitingConnections = this.waitingConnections
+        .push(item)
+        .sortBy(listItem => -1 * listItem.priority);
     }
 
     if (connection.state === AbstractConnection.OPEN) {
-      this.openConnections = this.openConnections.enqueue(item);
+      if (this.openConnections.some(listItem => listItem.equals(item))) {
+        return false;
+      }
+      this.openConnections = this.openConnections
+        .push(item)
+        .sortBy(listItem => -1 * listItem.priority);
     }
 
     connection.addListener(ConnectionEvent.ABORT, this.handleConnectionAbort);
@@ -133,7 +143,7 @@ export default class ConnectionManager {
 
     connection.addListener(ConnectionEvent.ERROR, this.handleConnectionError);
 
-    // important: when it returns true here, the connection 
+    // important: when it returns true here, the connection
     // might already been started in the next()-loop.
     this.next();
     return true;
@@ -146,10 +156,11 @@ export default class ConnectionManager {
    * @param {AbstractConnection} connection – connection to dequeue
    */
   dequeue(connection) {
-    const item = new ConnectionQueueItem(connection);
+    if (connection.state === AbstractConnection.CLOSED) {
+      return false;
+    }
 
-    this.waitingConnections = this.waitingConnections.dequeue(item);
-    this.openConnections = this.openConnections.dequeue(item);
+    const item = new ConnectionQueueItem(connection);
 
     connection.removeListener(
       ConnectionEvent.ABORT,
@@ -164,10 +175,18 @@ export default class ConnectionManager {
       this.handleConnectionError
     );
 
-    if (connection.state === AbstractConnection.OPEN) {
-      connection.close();
+    if (connection.state === AbstractConnection.INIT) {
+      this.waitingConnections = this.waitingConnections.filter(
+        listItem => !listItem.equals(item)
+      );
     }
 
-    this.next();
+    if (connection.state === AbstractConnection.OPEN) {
+      connection.close();
+      this.openConnections = this.openConnections.filter(
+        listItem => !listItem.equals(item)
+      );
+      this.next();
+    }
   }
 }
