@@ -84,17 +84,7 @@ export default class ConnectionQueue {
       connections = this.connections.push(item);
     }
 
-    connections = connections.sort(({ priority: a }, { priority: b }) => {
-      if (a > b) {
-        return -1;
-      }
-
-      if (a < b) {
-        return 1;
-      }
-
-      return 0;
-    });
+    connections = connections.sortBy(item => (-1) * item.priority);
 
     return new ConnectionQueue(connections);
   }
