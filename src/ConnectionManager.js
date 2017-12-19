@@ -185,13 +185,15 @@ export default class ConnectionManager {
     // lets see if we can kill other low priority connections 
     // in favor of this one.
     if (this.requestFreeSlot(item.priority)) {
-      this.openConnection(item.connection);
+      if (item.connection.state === AbstractConnection.INIT) {
+        this.openConnection(item.connection);
+      }
     } else {
       // theoreticly it is possible to open connections on your own
       // and then add them to the manager, if this happens and there 
       //is no free slot, we have to kill it.
       if (item.connection.state === AbstractConnection.OPEN) {
-        item.connection.abort();
+        item.connection.close();
         return false;
       }
     }
@@ -231,12 +233,13 @@ export default class ConnectionManager {
     // do then remove it from the list
     if (connection.state === AbstractConnection.INIT) {
       this.waitingList = this.waitingList.dequeue(item);
+      this.removeListener(item.connection);
     }
 
-    // open connection? we need to dequeue & abort it 
+    // open connection? just close it, 
+    // everything else is handled by handleClose 
     if (connection.state === AbstractConnection.OPEN) {
-      connection.abort();
-      this.openList = this.openList.dequeue(item);
+      connection.close();
     }
   }
 }

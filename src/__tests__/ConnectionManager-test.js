@@ -85,9 +85,10 @@ describe("ConnectionManager", () => {
 
   describe("#dequeue", function() {
     beforeEach(() => {
-      ConnectionManager.enqueue(connection1);
-      ConnectionManager.enqueue(connection2);
-      ConnectionManager.enqueue(connection3);
+      ConnectionManager.enqueue(connection1.open());
+      ConnectionManager.enqueue(connection2.open());
+      ConnectionManager.enqueue(connection3.open());
+      
     });
 
     it("removes abort listeners to new connection", () => {
