@@ -83,7 +83,7 @@ export default class ConnectionManager {
         context.removeListeners(item.connection);
 
         // remove connection from list
-        context.list.filter(
+        context.list = context.list.filter(
           listItem => !listItem.equals(item)
         );
 
@@ -185,10 +185,51 @@ export default class ConnectionManager {
           ConnectionEvent.ERROR,
           this.handleConnectionError
         );
+      },
+
+      update(index, priority) {
+        const item = this.list.get(index);
+
+        // well…
+        if (item.priority === priority) {
+          return;
+        }
+
+        // connection was still in queue - if priority increased, can we start it right now?
+        if (item.connection.state === AbstractConnection.INIT &&
+          priority > item.priority
+        ) {
+          // lets see if we can get a free slot, this could close 
+          // low priority connections in favor of this.
+          if (this.requestFreeSlot(item.priority)) {
+
+            // yes \o/
+            this.openConnection(item.connection);
+          }
+        }
+
+        // connection is open,
+        // prio is decreased,
+        // all slots are occupied
+        // and there is a waiting connection with higher prio
+        // => close this one.
+        if (item.connection.state === AbstractConnection.OPEN &&
+          priority < item.priority &&
+          this.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) === maxConnections &&
+          this.list.find(listItem => listItem.connection.state === AbstractConnection.INIT).priority * threshold > priority
+        ) {
+          item.connection.close();
+        }
+
+        // update prio in item & sort list
+        item.priority = priority;
+        this.list = this.list.sortBy(listItem => -1 * listItem.priority);
+
+        return;
       }
     };
 
-    this.add = this.add.bind(context);
+    this.schedule = this.schedule.bind(context);
   }
 
   /**
@@ -199,20 +240,20 @@ export default class ConnectionManager {
    * @param {Integer} [priority] – optional change of priority
    * @return {bool} - true if the connection was added, false if not.
    */
-  add(connection, priority) {
+  schedule(connection, priority) {
 
     // maybe we got a closed connection, nothing to do.
     if (connection.state === AbstractConnection.CLOSED) {
-      return false;
+      return;
     }
 
     // create a new QueueItem to have the correct default priority
     const item = new ConnectionQueueItem(connection, priority);
 
-    // connection already queued, update is not allowed at this point
-    // @TODO make it work
-    if (this.list.some(listItem => listItem.equals(item))) {
-      return false;
+    // if the connection is already queued, we need update it
+    const index = this.list.findIndex(listItem => listItem.equals(item));
+    if (index >= 0) {
+      return this.update(index, priority);
     }
 
     // lets see if we can get a free slot, this could close 
@@ -231,7 +272,7 @@ export default class ConnectionManager {
       // to kill them now…
       if (item.connection.state === AbstractConnection.OPEN) {
         item.connection.close();
-        return false;
+        return;
       }
     }
 
@@ -241,6 +282,6 @@ export default class ConnectionManager {
       .sortBy(listItem => -1 * listItem.priority);
 
     // connection was enqueued (or directly started).
-    return true;
+    return;
   }
 }

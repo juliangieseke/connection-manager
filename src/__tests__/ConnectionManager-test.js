@@ -23,7 +23,7 @@ describe("ConnectionManager", () => {
 
   describe("#queue", function () {
     it("adds abort listeners to new connection", () => {
-      ConnectionManager.add(connection1);
+      ConnectionManager.schedule(connection1);
 
       expect(
         connection1.addListener.mock.calls.find(
@@ -33,7 +33,7 @@ describe("ConnectionManager", () => {
     });
 
     it("adds complete listeners to new connection", () => {
-      ConnectionManager.add(connection1);
+      ConnectionManager.schedule(connection1);
 
       expect(
         connection1.addListener.mock.calls.find(
@@ -43,7 +43,7 @@ describe("ConnectionManager", () => {
     });
 
     it("adds error listeners to new connection", () => {
-      ConnectionManager.add(connection1);
+      ConnectionManager.schedule(connection1);
 
       expect(
         connection1.addListener.mock.calls.find(
@@ -56,12 +56,12 @@ describe("ConnectionManager", () => {
       connection1.state = AbstractConnection.CLOSED;
 
       expect(() => {
-        ConnectionManager.add(connection1);
+        ConnectionManager.schedule(connection1);
       }).not.toThrow();
     });
 
     it("opens connection if slot is free and connection not open yet", () => {
-      ConnectionManager.add(connection1);
+      ConnectionManager.schedule(connection1);
 
       expect(connection1.open).toHaveBeenCalled();
     });
@@ -69,14 +69,14 @@ describe("ConnectionManager", () => {
     it("doesn't open connections twice", () => {
       connection1.open();
 
-      ConnectionManager.add(connection1);
+      ConnectionManager.schedule(connection1);
 
       expect(connection1.open).toHaveBeenCalledTimes(1);
     });
 
     it("doesn't open connection if there's no free slot", () => {
-      ConnectionManager.add(connection1);
-      ConnectionManager.add(connection2);
+      ConnectionManager.schedule(connection1);
+      ConnectionManager.schedule(connection2);
 
       expect(connection1.open).toHaveBeenCalled();
       expect(connection2.open).not.toHaveBeenCalled();
