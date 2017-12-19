@@ -79,11 +79,10 @@ export default class ConnectionManager {
       handleConnectionComplete: event => {
         const item = new ConnectionQueueItem(event.target);
 
-        // remove listeners from connection to 
-        // prevent any kind of weird loops
+        // remove listeners from connection
         context.removeListeners(item.connection);
 
-        // dequeue connection from list
+        // remove connection from list
         context.list.filter(
           listItem => !listItem.equals(item)
         );
