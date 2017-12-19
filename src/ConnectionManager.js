@@ -157,39 +157,30 @@ export default class ConnectionManager {
 
     // create a new QueueItem to have the correct default priority.
     const item = new ConnectionQueueItem(connection, priority);
-
-    // theoreticly it is possible to open connections on your own
-    // and then add them to the manager, if this happens we have
-    // to deal with them correctly
-    if (item.connection.state === AbstractConnection.OPEN) {
-      if (this.requestFreeSlot(item.priority)) {
-        this.addListeners(item.connection);
-        this.openList = this.openList.enqueue(item);
-        return true;
-      } else {
-        // 
-        item.connection.abort();
-        return false;
-      }
-    }
-
-    // from here on, we have a connection with state == INIT
-
-    // add listeners for handling it - these will call this.next() when the connection is closed.
-    this.addListeners(item.connection);
-
+  
     // lets see if we can kill other low priority connections 
     // in favor of this one.
     if (this.requestFreeSlot(item.priority)) {
       this.openConnection(item.connection);
+    } else {
+      // theoreticly it is possible to open connections on your own
+      // and then add them to the manager, if this happens and there 
+      //is no free slot, we have to kill it.
+      if (item.connection.state === AbstractConnection.OPEN) {
+        item.connection.close();
+        return false;
+      }
     }
-    
-    // ^ no free slot, connection is still initialized, enqueue it in waiting list
+
+    // add listeners for handling it - these will call this.next() when the connection is closed.
+    this.addListeners(item.connection);
+
+    // ^^ no free slot, connection is still initialized, enqueue it in waiting list
     if (connection.state === AbstractConnection.INIT) {
       this.waitingList = this.waitingList.enqueue(item);
     }
 
-    // ^^ there was a free slot => connection is open, put in openList
+    // ^^^ there was a free slot => connection is open, put in openList
     if(connection.state === AbstractConnection.OPEN) {
       this.openList = this.openList.enqueue(item);
     }
