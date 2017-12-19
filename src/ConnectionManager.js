@@ -76,7 +76,7 @@ export default class ConnectionManager {
        * @param {ConnectionEvent} event
        */
       handleConnectionAbort: event => {
-        this.dequeue(event.target);
+        context.handleConnectionComplete(event);
       },
 
       /**
@@ -85,7 +85,17 @@ export default class ConnectionManager {
        * @param {ConnectionEvent} event
        */
       handleConnectionComplete: event => {
-        this.dequeue(event.target);
+        const item = new ConnectionQueueItem(event.target);
+        
+        // remove listeners from connection to 
+        // prevent any kind of weird loops
+        context.removeListeners(item.connection);
+
+        // dequeue connection from list
+        context.openList.dequeue(item.connection);
+
+        // start next connection from queue (if any)
+        context.next();
       },
 
       /**
@@ -94,7 +104,7 @@ export default class ConnectionManager {
        * @param {ConnectionEvent} event
        */
       handleConnectionError: event => {
-        this.dequeue(event.target);
+        context.handleConnectionComplete(event);
       },
 
       /**
@@ -134,6 +144,20 @@ export default class ConnectionManager {
         );
 
         connection.addListener(ConnectionEvent.ERROR, this.handleConnectionError);
+      },
+      removeListeners(connection) {
+        connection.removeListener(
+          ConnectionEvent.ABORT,
+          this.handleConnectionAbort
+        );
+        connection.removeListener(
+          ConnectionEvent.COMPLETE,
+          this.handleConnectionComplete
+        );
+        connection.removeListener(
+          ConnectionEvent.ERROR,
+          this.handleConnectionError
+        );
       }
     };
 
@@ -167,7 +191,7 @@ export default class ConnectionManager {
       // and then add them to the manager, if this happens and there 
       //is no free slot, we have to kill it.
       if (item.connection.state === AbstractConnection.OPEN) {
-        item.connection.close();
+        item.connection.abort();
         return false;
       }
     }
@@ -196,28 +220,23 @@ export default class ConnectionManager {
    * @param {AbstractConnection} connection – connection to dequeue
    */
   dequeue(connection) {
-    const item = new ConnectionQueueItem(connection);
-
-    this.waitingList = this.waitingList.dequeue(item);
-    this.openList = this.openList.dequeue(item);
-
-    connection.removeListener(
-      ConnectionEvent.ABORT,
-      this.handleConnectionAbort
-    );
-    connection.removeListener(
-      ConnectionEvent.COMPLETE,
-      this.handleConnectionComplete
-    );
-    connection.removeListener(
-      ConnectionEvent.ERROR,
-      this.handleConnectionError
-    );
-
-    if (connection.state === AbstractConnection.OPEN) {
-      connection.close();
+    // connection is already closed, nothing to do here
+    if (connection.state === AbstractConnection.CLOSED) {
+      return false;
     }
 
-    this.next();
+    const item = new ConnectionQueueItem(connection);
+
+    // waiting connection? nothing more to 
+    // do then remove it from the list
+    if (connection.state === AbstractConnection.INIT) {
+      this.waitingList = this.waitingList.dequeue(item);
+    }
+
+    // open connection? we need to dequeue & abort it 
+    if (connection.state === AbstractConnection.OPEN) {
+      connection.abort();
+      this.openList = this.openList.dequeue(item);
+    }
   }
 }
