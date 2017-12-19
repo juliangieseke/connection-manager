@@ -188,8 +188,7 @@ export default class ConnectionManager {
       }
     };
 
-    this.enqueue = this.enqueue.bind(context);
-    this.dequeue = this.dequeue.bind(context);
+    this.add = this.add.bind(context);
   }
 
   /**
@@ -200,7 +199,7 @@ export default class ConnectionManager {
    * @param {Integer} [priority] – optional change of priority
    * @return {bool} - true if the connection was added, false if not.
    */
-  enqueue(connection, priority) {
+  add(connection, priority) {
 
     // maybe we got a closed connection, nothing to do.
     if (connection.state === AbstractConnection.CLOSED) {
@@ -243,32 +242,5 @@ export default class ConnectionManager {
 
     // connection was enqueued (or directly started).
     return true;
-  }
-
-  /**
-   * Dequeues given connection
-   *
-   * @this ConnectionManager~Context
-   * @param {AbstractConnection} connection – connection to dequeue
-   */
-  dequeue(connection) {
-
-    // if a connection is closed, it is already dequeued
-    if (connection.state === AbstractConnection.CLOSED) {
-      return false;
-    }
-
-    // create item for easier handling
-    const item = new ConnectionQueueItem(connection);
-
-    // if connection is open, close it — this will call next() and remove listeners!
-    if (connection.state === AbstractConnection.OPEN) {
-      connection.close();
-    }
-
-    // remove it from list
-    this.list = this.list.filter(
-      listItem => !listItem.equals(item)
-    );
   }
 }
