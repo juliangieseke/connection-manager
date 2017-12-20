@@ -57,6 +57,11 @@ export default class ConnectionManager {
         //get first waiting connection and open it
         const item = context.list.find(listItem =>
           listItem.connection.state === AbstractConnection.INIT);
+        
+        if (!item) {
+          return;
+        }
+
         context.openConnection(item.connection);
 
         // next please
@@ -82,11 +87,6 @@ export default class ConnectionManager {
         // remove listeners from connection
         context.removeListeners(item.connection);
 
-        // remove connection from list
-        context.list = context.list.filter(
-          listItem => !listItem.equals(item)
-        );
-
         // start next connection from queue (if any)
         context.next();
       },
@@ -103,38 +103,43 @@ export default class ConnectionManager {
        * Closes low prio connections until a slot is free
        *
        * @param {int} priority
-       * @return {bool} - true if there is a free slot, false if not.
+       * @return {int} - number of free slots
        */
       requestFreeSlot(priority) {
 
-        // helper function to get open count
-        // @TODO check if we want this globally
-        function openCount() {
-          return context.list.count(listItem =>
-            listItem.connection.state === AbstractConnection.OPEN);
-        }
-
-        // helper function to get last Item
-        // @TODO check if we want this globally
-        function findLast() {
-          return context.list.findLast(listItem =>
-            listItem.connection.state === AbstractConnection.OPEN)
-        }
-
         // get last (lowest priority) open connection in list
-        let item = findLast();
+        const item = context.list.findLast(listItem =>
+          listItem.connection.state === AbstractConnection.OPEN);
+        
+        
+        // no open item.
+        if (!item) {
+          console.log("requestFreeSlot: item is undefined");
+          return true;
+        }
 
-        // while last connections priority is low enough, close it
-        // @TODO this might be a bit slow
-        while (
-          item &&
-          openCount() < maxConnections &&
+        console.log("requestFreeSlot:", context.list, item.connection.state, item, priority, priority * threshold, item.priority < priority * threshold);
+
+        // not all slots occupied
+        if(context.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) < maxConnections) {
+          console.log("requestFreeSlot: not all slot occipued");
+          return true;
+        }
+
+        // close least important open connection, if the given one is more important
+        if (
           item.priority < priority * threshold
         ) {
+          // remove connection from list
+          context.list = context.list.filter(
+            listItem => !listItem.equals(item)
+          );
           item.connection.close();
-          item = findLast();
+          return true;
         }
-        return openCount() < maxConnections;
+
+        // return free open slots
+        return false;
       },
 
       /**
@@ -144,8 +149,8 @@ export default class ConnectionManager {
        */
       openConnection(connection) {
 
-        // add listeners for handling it - these will call this.next() when the connection is closed.
-        this.addListeners(connection);
+        // add listeners for handling it - these will call context.next() when the connection is closed.
+        context.addListeners(connection);
 
         // open connection with token (TBD)
         connection.open({ "Authentication": "Bearer TOKEN" });
@@ -157,14 +162,14 @@ export default class ConnectionManager {
        * @param {AbstractConnection} connection 
        */
       addListeners(connection) {
-        connection.addListener(ConnectionEvent.ABORT, this.handleConnectionAbort);
+        connection.addListener(ConnectionEvent.ABORT, context.handleConnectionAbort);
 
         connection.addListener(
           ConnectionEvent.COMPLETE,
-          this.handleConnectionComplete
+          context.handleConnectionComplete
         );
 
-        connection.addListener(ConnectionEvent.ERROR, this.handleConnectionError);
+        connection.addListener(ConnectionEvent.ERROR, context.handleConnectionError);
       },
 
       /**
@@ -175,37 +180,30 @@ export default class ConnectionManager {
       removeListeners(connection) {
         connection.removeListener(
           ConnectionEvent.ABORT,
-          this.handleConnectionAbort
+          context.handleConnectionAbort
         );
         connection.removeListener(
           ConnectionEvent.COMPLETE,
-          this.handleConnectionComplete
+          context.handleConnectionComplete
         );
         connection.removeListener(
           ConnectionEvent.ERROR,
-          this.handleConnectionError
+          context.handleConnectionError
         );
       },
 
+      /**
+       * Updates the Priority of Index
+       * 
+       * @param {int} index 
+       * @param {int} priority 
+       */
       update(index, priority) {
-        const item = this.list.get(index);
+        const item = context.list.get(index);
 
         // well…
         if (item.priority === priority) {
-          return;
-        }
-
-        // connection was still in queue - if priority increased, can we start it right now?
-        if (item.connection.state === AbstractConnection.INIT &&
-          priority > item.priority
-        ) {
-          // lets see if we can get a free slot, this could close 
-          // low priority connections in favor of this.
-          if (this.requestFreeSlot(item.priority)) {
-
-            // yes \o/
-            this.openConnection(item.connection);
-          }
+          return context.list;
         }
 
         // connection is open,
@@ -215,17 +213,59 @@ export default class ConnectionManager {
         // => close this one.
         if (item.connection.state === AbstractConnection.OPEN &&
           priority < item.priority &&
-          this.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) === maxConnections &&
-          this.list.find(listItem => listItem.connection.state === AbstractConnection.INIT).priority * threshold > priority
+          context.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) === maxConnections &&
+          context.list.find(listItem => listItem.connection.state === AbstractConnection.INIT).priority * threshold > priority
         ) {
-          item.connection.close();
+          setTimeout(() => item.connection.close(), 0);
+          // remove connection from list
+          return context.list.filter(
+            listItem => !listItem.equals(item)
+          );
         }
 
-        // update prio in item & sort list
-        item.priority = priority;
-        this.list = this.list.sortBy(listItem => -1 * listItem.priority);
+        // connection was still in queue
+        // if priority increased, 
+        // can we start it right now?
+        if (item.connection.state === AbstractConnection.INIT &&
+          priority > item.priority &&
+          // @TODO get rid of requestFreeSlot here, 
+          context.requestFreeSlot(item.priority)
+        ) {
+          context.openConnection(item.connection);
+        }
 
-        return;
+        // update & sort list
+        return context.list
+          .update(index, listItem => new ConnectionQueueItem(item.connection, priority))
+          .sortBy(listItem => -1 * listItem.priority);
+
+      },
+
+      /**
+       * Pushes a new item into the list
+       * 
+       * @param {ConnectionQueueItem} item 
+       * @return {List} - updated connection list
+       */
+      push(item) {
+
+        // theoreticly it is possible to open connections on your own
+        // and then add them to the manager, if this happened and 
+        // there is no free slot, we have to kill them now…
+        if (item.connection.state === AbstractConnection.OPEN && !context.requestFreeSlot(item.priority)) {
+          setTimeout(() => item.connection.close(), 0);
+          return context.list;
+        }
+
+        // if a slot is available ant not yet opened, open :)
+        if (item.connection.state === AbstractConnection.INIT && context.requestFreeSlot(item.priority)) {
+          context.openConnection(item.connection);
+        }
+
+        // connection accepted, store it in list \o/
+        return context.list
+          .push(item)
+          .sortBy(listItem => -1 * listItem.priority);
       }
     };
 
@@ -250,38 +290,16 @@ export default class ConnectionManager {
     // create a new QueueItem to have the correct default priority
     const item = new ConnectionQueueItem(connection, priority);
 
-    // if the connection is already queued, we need update it
+    // if the connection is already queued, we need to update it
     const index = this.list.findIndex(listItem => listItem.equals(item));
+
+
     if (index >= 0) {
-      return this.update(index, priority);
-    }
-
-    // lets see if we can get a free slot, this could close 
-    // low priority connections in favor of this.
-    if (this.requestFreeSlot(item.priority)) {
-
-      // if not yet opened, open :)
-      if (item.connection.state === AbstractConnection.INIT) {
-        this.openConnection(item.connection);
-      }
-
+      this.list = this.update(index, priority);
     } else {
-
-      // theoreticly it is possible to open connections on your own
-      // and then add them to the manager, if this happened we have
-      // to kill them now…
-      if (item.connection.state === AbstractConnection.OPEN) {
-        item.connection.close();
-        return;
-      }
+      this.list = this.push(item);
     }
 
-    // connection accepted, store it in list \o/
-    this.list = this.list
-      .push(item)
-      .sortBy(listItem => -1 * listItem.priority);
-
-    // connection was enqueued (or directly started).
     return;
   }
 }
