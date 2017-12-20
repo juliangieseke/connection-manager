@@ -102,10 +102,12 @@ export default class ConnectionManager {
       /**
        * Closes low prio connections until a slot is free
        *
-       * @param {int} priority
+       * @param {int} newItem
        * @return {int} - number of free slots
+       * @TODO needs a better name…
+       * @TODO maybe we can either get rid of it in oush or use it in update?
        */
-      requestFreeSlot(priority) {
+      requestFreeSlot(newItem) {
 
         // get last (lowest priority) open connection in list
         const item = context.list.findLast(listItem =>
@@ -124,7 +126,7 @@ export default class ConnectionManager {
         // close least important open connection, 
         // if the given one is more important
         if (
-          item.priority < priority * threshold
+          item.priority < newItem.priority * threshold
         ) {
           // remove connection from list
           context.list = context.list.filter(
@@ -230,7 +232,7 @@ export default class ConnectionManager {
           // if priority increased, 
           if (priority > item.priority &&
             // and there is a free slot
-            context.requestFreeSlot(item.priority)
+            context.requestFreeSlot(item)
           ) {
             // open this one
             context.openConnection(item.connection);
@@ -259,7 +261,7 @@ export default class ConnectionManager {
         // and then add them to the manager, if this happened and 
         // there is no free slot, we have to kill them now…
         if (item.connection.state === AbstractConnection.OPEN && 
-          !context.requestFreeSlot(item.priority)
+          !context.requestFreeSlot(item)
         ) {
           // we need to close the connection async.
           setTimeout(() => item.connection.close(), 0);
@@ -277,7 +279,7 @@ export default class ConnectionManager {
         // if connection is not opened yet
         if (item.connection.state === AbstractConnection.INIT && 
           // and a free slot is available
-          context.requestFreeSlot(item.priority)
+          context.requestFreeSlot(item)
         ) {
           // open it
           context.openConnection(item.connection);
@@ -293,6 +295,8 @@ export default class ConnectionManager {
     };
 
     this.schedule = this.schedule.bind(context);
+    this.open = this.open.bind(context);
+    this.waiting = this.waiting.bind(context);
   }
 
   /**
@@ -319,10 +323,17 @@ export default class ConnectionManager {
     if (index >= 0) {
       this.update(index, priority);
     } else {
-      console.log("pushing…");
       this.push(item);
-      console.log("…pushed", this.list.size, this.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN));
     }
     return;
+  }
+
+  
+  open() {
+    return this.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN);
+  }
+
+  waiting() {
+    return this.list.count(listItem => listItem.connection.state === AbstractConnection.INIT);
   }
 }
