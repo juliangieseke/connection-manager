@@ -1,6 +1,6 @@
 import { AbstractConnection } from "@dcos/connections";
 
-export const DEFAULT_PRIORITY = 0;
+export const DEFAULT_PRIORITY = 1;
 export const MINIMUM_PRIORITY = DEFAULT_PRIORITY;
 
 export default class ConnectionQueueItem {
