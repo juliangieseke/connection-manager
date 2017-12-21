@@ -198,7 +198,7 @@ export default class ConnectionManager {
        * @param {int} priority - new priority
        */
       update(index, priority) {
-        const item = list.get(index);
+        const item = context.list.get(index);
 
         // well…
         if (item.priority === priority) {
@@ -210,9 +210,9 @@ export default class ConnectionManager {
           // if prio is decreased,
           if (priority < item.priority &&
             // all slots are occupied
-            list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) === maxConnections &&
+            context.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) === maxConnections &&
             // and there is a waiting connection with higher prio
-            list.find(listItem => listItem.connection.state === AbstractConnection.INIT).priority * threshold > priority
+            context.list.find(listItem => listItem.connection.state === AbstractConnection.INIT).priority * threshold > priority
           ) {
             // close async
             setTimeout(() => item.connection.close(), 0);
@@ -297,6 +297,8 @@ export default class ConnectionManager {
     this.schedule = this.schedule.bind(context);
     this.open = this.open.bind(context);
     this.waiting = this.waiting.bind(context);
+    this.lowestOpenPriority = this.lowestOpenPriority.bind(context);
+    this.highestWaitingPriority = this.highestWaitingPriority.bind(context);
   }
 
   /**
@@ -319,7 +321,6 @@ export default class ConnectionManager {
     // if the connection is already queued, we need to update it
     const index = this.list.findIndex(listItem => listItem.equals(item));
 
-
     if (index >= 0) {
       this.update(index, priority);
     } else {
@@ -329,11 +330,20 @@ export default class ConnectionManager {
   }
 
   
+  
   open() {
     return this.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN);
+  }
+  lowestOpenPriority() {
+    const item = this.list.findLast(listItem => listItem.connection.state === AbstractConnection.OPEN);
+    return item ? item.priority : 0;
   }
 
   waiting() {
     return this.list.count(listItem => listItem.connection.state === AbstractConnection.INIT);
+  }
+  highestWaitingPriority() {
+    const item = this.list.find(listItem => listItem.connection.state === AbstractConnection.INIT);
+    return item ? item.priority : 0;
   }
 }

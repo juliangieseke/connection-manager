@@ -17,9 +17,7 @@ export default class ConnectionQueueItem {
 
     if (!Number.isSafeInteger(priority) || priority < MINIMUM_PRIORITY) {
       throw new Error(
-        "Invalid Priority, has to be a number greater than " +
-          MINIMUM_PRIORITY +
-          "."
+        `Invalid Priority: ${priority}, has to be a number greater than ${MINIMUM_PRIORITY}.`
       );
     }
 
