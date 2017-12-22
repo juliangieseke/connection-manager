@@ -12,9 +12,11 @@ let runnerCompleted = 0;
 
 function updateHtml() {
     
-    const openList = connectionManager.open();
-    const waitingList = connectionManager.waiting();
+    const list = connectionManager.list();
+    const openList = list.filter(listItem => listItem.connection.state === AbstractConnection.OPEN);
+    const waitingList = list.filter(listItem => listItem.connection.state === AbstractConnection.INIT);
 
+    document.getElementById("cmlist").innerHTML = list.size;
     document.getElementById("cmopen").innerHTML = openList.size;
     document.getElementById("cmwaiting").innerHTML = waitingList.size;
 
@@ -36,6 +38,7 @@ function updateHtml() {
     } else {
         document.getElementById("cmlowopen").innerHTML = "0";
         document.getElementById("openlist").innerHTML = "no open connections";
+        document.getElementById("lastopen").innerHTML = "no open connections";
     }
 
     if(waitingList.size) {
@@ -47,6 +50,7 @@ function updateHtml() {
     } else {
         document.getElementById("cmhighwait").innerHTML = "0";
         document.getElementById("waitinglist").innerHTML = "no waiting connections";
+        document.getElementById("firstwaiting").innerHTML = "no waiting connections";
     }
 }
 
@@ -103,14 +107,14 @@ document.getElementById("openadd").addEventListener("click", function() {
 });
 
 document.getElementById("openres").addEventListener("click", function() {
-    const connection = connectionManager.open().last().connection;
+    const connection = connectionManager.list().filter(listItem => listItem.connection.state === AbstractConnection.OPEN).last().connection;
     if(connection.state !== AbstractConnection.CLOSED) {
         connectionManager.schedule(connection, parseInt(document.getElementById("openresprio").value));
     }
 });
 
 document.getElementById("waitingres").addEventListener("click", function() {
-    const connection = connectionManager.waiting().first().connection;
+    const connection = connectionManager.list().filter(listItem => listItem.connection.state === AbstractConnection.INIT).first().connection;
     if(connection.state !== AbstractConnection.CLOSED) {
         connectionManager.schedule(connection, parseInt(document.getElementById("waitingresprio").value));
     }
