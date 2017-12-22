@@ -187,7 +187,6 @@ export default class ConnectionManager {
 
           // open waiting
           waitingList = waitingList.shift();
-          context.addListeners(waitingItem.connection);
           context.openConnection(waitingItem.connection);
           openList = openList.push(waitingItem);
         }
@@ -197,21 +196,6 @@ export default class ConnectionManager {
 
         //and merge them again.
         return openList.concat(waitingList);
-      },
-
-      push(list, item) {
-
-        if(item.connection.state === AbstractConnection.OPEN) {
-          //add listeners
-          this.addListeners(item.connection);
-        }
-        
-        return context.process(
-          list
-            .filter(listItem => !listItem.equals(item))
-            .push(item)
-            .sortBy(listItem => -1 * listItem.priority)
-        );
       }
     };
 
@@ -238,7 +222,21 @@ export default class ConnectionManager {
     // create a new QueueItem to have the correct default priority
     const item = new ConnectionQueueItem(connection, priority);
     
-    setTimeout(() => this.list = this.push(this.list, item), 0);
+
+    // add listeners, if unknown connection
+    if(! item.connection.listeners(ConnectionEvent.ABORT).find(listener => listener === this.handleConnectionAbort)) {
+      this.addListeners(item.connection);
+    } else {
+      // remove item from list
+      this.list = this.list.filter(listItem => !listItem.equals(item));
+    }
+    
+    // add, sort and process
+    this.list =  this.process(
+      this.list
+        .push(item)
+        .sortBy(listItem => -1 * listItem.priority)
+    );
     
     return;
   }

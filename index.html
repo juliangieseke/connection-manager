@@ -21,12 +21,19 @@
     <button id=openadd>add open</button><br />
     <br />
     reschedule last open connection:<br />
-    prio: <input type=number id=resprio value=50 min=1 max=100 style="width:3rem" /><br />
-    <button id=res>reschedule</button><br />
+    <span id="lastopen"></span><br />
+    prio: <input type=number id=openresprio value=50 min=1 max=100 style="width:3rem" /><br />
+    <button id=openres>reschedule</button><br />
+    <br />
+    reschedule first waiting connection:<br />
+    <span id="firstwaiting"></span><br />
+    prio: <input type=number id=waitingresprio value=50 min=1 max=100 style="width:3rem" /><br />
+    <button id=waitingres>reschedule</button><br />
     <br />
 
     Created: <span id=created>Loading…</span><br />
     Alive: <span id=alive>Loading…</span><br />
+    Completed: <span id=completed>Loading…</span><br />
     <br />
     CM.open: <span id=cmopen>Loading…</span><br />
     CM.waiting: <span id=cmwaiting>Loading…</span><br />

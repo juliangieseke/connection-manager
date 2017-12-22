@@ -7,7 +7,8 @@ import { List } from "immutable";
 const connectionManager = new ConnectionManager(5);
 let connectionsList = List();
 let randtimer;
-let runner = 0;
+let runnerCreated = 0;
+let runnerCompleted = 0;
 
 function updateHtml() {
     
@@ -23,13 +24,15 @@ function updateHtml() {
         document.getElementById("alive").innerHTML = 0;
     }
 
-    document.getElementById("created").innerHTML = runner;
+    document.getElementById("created").innerHTML = runnerCreated;
+    document.getElementById("completed").innerHTML = runnerCompleted;
 
     if(openList.size) {
         document.getElementById("cmlowopen").innerHTML = openList.last().priority;
         document.getElementById("openlist").innerHTML = openList.reduce((prev, cur, index) => {
             return prev.concat(cur.connection.url);
         }, []).join("<br>");
+        document.getElementById("lastopen").innerHTML = openList.last().connection.url;
     } else {
         document.getElementById("cmlowopen").innerHTML = "0";
         document.getElementById("openlist").innerHTML = "no open connections";
@@ -40,6 +43,7 @@ function updateHtml() {
         document.getElementById("waitinglist").innerHTML = waitingList.slice(0, 10).reduce((prev, cur, index) => {
             return prev.concat(cur.connection.url);
         }, []).join("<br>");
+        document.getElementById("firstwaiting").innerHTML = waitingList.first().connection.url;
     } else {
         document.getElementById("cmhighwait").innerHTML = "0";
         document.getElementById("waitinglist").innerHTML = "no waiting connections";
@@ -51,12 +55,7 @@ function createConnection(slug, priority) {
     const connection = new XHRConnection(`test.html?c=${details}`);
     
     connection.on(ConnectionEvent.ABORT, event => {
-        connectionsList = connectionsList.filter(listConnection => {
-            if(listConnection == event.target) {
-                console.log(listConnection, event.target, listConnection !== event.target);
-            }
-            return listConnection !== event.target
-        });
+        connectionsList = connectionsList.filter(listConnection => listConnection !== event.target);
         setTimeout(() => connectionManager.schedule(createConnection(slug, priority), priority), 1000);
     });
     connection.on(ConnectionEvent.ERROR, event => {
@@ -64,6 +63,7 @@ function createConnection(slug, priority) {
     });
     connection.on(ConnectionEvent.COMPLETE, event => {
         connectionsList = connectionsList.filter(listConnection => listConnection !== event.target);
+        runnerCompleted += 1;
     });
     connectionsList = connectionsList.push(connection);
     return connection;
@@ -84,23 +84,34 @@ document.getElementById("randomstop").addEventListener("click", function() {
 document.getElementById("randomstart").addEventListener("click", function() {
     function nexttimer() {
         const priority = Math.ceil(Math.random()*100);
-        connectionManager.schedule(createConnection(runner++, priority), priority);
+        connectionManager.schedule(createConnection(runnerCreated++, priority), priority);
         randtimer = window.setTimeout(nexttimer, document.getElementById("randomint").value)
     }
     if (randtimer) return;
     nexttimer();
 });
 document.getElementById("initadd").addEventListener("click", function() {
-    connectionManager.schedule(createConnection(runner++, priority), parseInt(document.getElementById("initprio").value));
+    const priority = parseInt(document.getElementById("initprio").value);
+    connectionManager.schedule(createConnection(runnerCreated++, priority), priority);
 });
 
 document.getElementById("openadd").addEventListener("click", function() {
-    connectionManager.schedule(createConnection(runner++, priority).open(), parseInt(document.getElementById("openprio").value));
+    const priority = parseInt(document.getElementById("openprio").value);
+    const connection = createConnection(runnerCreated++, priority);
+    connection.open();
+    connectionManager.schedule(connection, priority);
 });
 
-document.getElementById("res").addEventListener("click", function() {
-    const connection = connectionsList.filter(listConnection => listConnection.state === AbstractConnection.OPEN).last();
+document.getElementById("openres").addEventListener("click", function() {
+    const connection = connectionManager.open().last().connection;
     if(connection.state !== AbstractConnection.CLOSED) {
-        connectionManager.schedule(connection, parseInt(document.getElementById("resprio").value));
+        connectionManager.schedule(connection, parseInt(document.getElementById("openresprio").value));
+    }
+});
+
+document.getElementById("waitingres").addEventListener("click", function() {
+    const connection = connectionManager.waiting().first().connection;
+    if(connection.state !== AbstractConnection.CLOSED) {
+        connectionManager.schedule(connection, parseInt(document.getElementById("waitingresprio").value));
     }
 });
