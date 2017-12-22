@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+</head>
+<body>
+    random interval: <br />
+    <input type=number id=randomint value=500 style="width:3rem" /><br />
+    <button id=randomstart>start</button>
+    <button id=randomstop>stop</button><br />
+    <br />
+    add init connection:<br />
+    prio: <input type=number id=initprio value=50 min=1 max=100 style="width:3rem" />
+    <button id=initadd>add init</button><br />
+    <br />
+    add open connection:<br />
+    prio: <input type=number id=openprio value=50 min=1 max=100 style="width:3rem" />
+    <button id=openadd>add open</button><br />
+    <br />
+    reschedule last open connection:<br />
+    <span id="lastopen"></span><br />
+    prio: <input type=number id=openresprio value=50 min=1 max=100 style="width:3rem" /><br />
+    <button id=openres>reschedule</button><br />
+    <br />
+    reschedule first waiting connection:<br />
+    <span id="firstwaiting"></span><br />
+    prio: <input type=number id=waitingresprio value=50 min=1 max=100 style="width:3rem" /><br />
+    <button id=waitingres>reschedule</button><br />
+    <br />
+
+    Created: <span id=created>Loading…</span><br />
+    Alive: <span id=alive>Loading…</span><br />
+    Completed: <span id=completed>Loading…</span><br />
+    <br />
+    CM.list: <span id=cmlist>Loading…</span><br />
+    CM.open: <span id=cmopen>Loading…</span><br />
+    CM.waiting: <span id=cmwaiting>Loading…</span><br />
+    CM.lowestOpenPriority: <span id=cmlowopen>Loading…</span><br />
+    CM.highestWaitingPriorty: <span id=cmhighwait>Loading…</span><br />
+    CM.openList:<br />
+    <p id=openlist>Loading…</p>
+    CM.waitingList:<br />
+    <p id=waitinglist>Loading…</p>
+    <br />
+    
+    <!--Advanced Config:<br />
+    count: <input type=number id=advcount value=20 style="width:3rem" /> |
+    priority: <input type=number id=advprio value=20 style="width:3rem" /> |
+    open: <input type=checkbox id=advopen /> |
+    retry: <input type=checkbox id=advretry /> |
+    retry prio: <input type=number id=advretryprio value=20 style="width:3rem" /><br />
+    <button id=advadd>add</button><br />-->
+    <script src="bundle.js"></script>
+</body>
+</html>

@@ -1,19 +1,15 @@
+import { List } from "immutable";
 import { AbstractConnection, ConnectionEvent } from "@dcos/connections";
-import ConnectionQueue from "./ConnectionQueue.js";
+import ConnectionQueueItem from "./ConnectionQueueItem";
 
-/**
- * The Connection Manager which is responsible for
- * queuing Connections into the ConnectionQueue and
- * actually starting them, when they are head of
- * waiting line.
- */
 export default class ConnectionManager {
   /**
    * Initializes an Instance of ConnectionManager
    *
    * @param {int} maxConnections – max open connections
+   * @param {float} threshold - only kill connections with a priority < newPriority * threshold
    */
-  constructor(maxConnections = 6) {
+  constructor(maxConnections = 6, threshold = 0.7) {
     /**
      * Private Context
      *
@@ -28,141 +24,193 @@ export default class ConnectionManager {
       instance: this,
 
       /**
-       * @property {ConnectionQueue} waitingConnections
-       * @description List of waiting connections ordered by priority
-       * @name ConnectionManager~Context#waitingConnections
+       * @property {ConnectionQueue} list
+       * @description List of connections ordered by priority
+       * @name ConnectionManager~Context#list
        */
-      waitingConnections: new ConnectionQueue(),
-
-      /**
-       * @property {List} openConnections
-       * @description List of open connections
-       * @name ConnectionManager~Context#next
-       */
-      openConnections: new ConnectionQueue(),
-
-      /**
-       * @property {function} next
-       * @description Opens the the connection if there's a free slot.
-       * @name ConnectionManager~Context#next
-       */
-      next() {
-        if (
-          context.openConnections.size >= maxConnections ||
-          context.waitingConnections.size === 0
-        ) {
-          return;
-        }
-
-        const connection = context.waitingConnections.first();
-
-        if (connection.state === AbstractConnection.INIT) {
-          connection.open(connection.url);
-        }
-
-        if (connection.state === AbstractConnection.OPEN) {
-          context.openConnections = context.openConnections.enqueue(connection);
-        }
-
-        // after added to open list, we can remove it from waiting
-        context.waitingConnections = context.waitingConnections.shift();
-        context.next();
-      },
-
-      /**
-       * @property {function} handleConnectionAbort
-       * @name ConnectionManager~Context#handleConnectionAbort
-       * @param {ConnectionEvent} event
-       */
-      handleConnectionAbort: event => {
-        this.dequeue(event.target);
-      },
+      list: List(),
 
       /**
        * @property {function} handleConnectionComplete
        * @name ConnectionManager~Context#handleConnectionComplete
        * @param {ConnectionEvent} event
        */
-      handleConnectionComplete: event => {
-        this.dequeue(event.target);
+      handleConnectionClose: event => {
+        const item = new ConnectionQueueItem(event.target);
+
+        // remove listeners from connection
+        context.removeListeners(item.connection);
+
+        // start next connection from queue (if any)
+        context.list = context.process(
+          context.list.filter(listItem => 
+            !listItem.equals(item)
+          )
+        );
       },
 
       /**
-       * @property {function} handleConnectionError
-       * @name ConnectionManager~Context#handleConnectionError
-       * @param {ConnectionEvent} event
+       * Opens a Connection
+       * 
+       * @param {AbstractConnection} connection
        */
-      handleConnectionError: event => {
-        this.dequeue(event.target);
+      openConnection(connection) {
+        // open connection (later: with token)
+        connection.open();
+      },
+
+      /**
+       * Adds Listeners to Connection
+       * 
+       * @param {AbstractConnection} connection 
+       */
+      addListeners(connection) {
+        connection.addListener(
+          ConnectionEvent.ABORT,
+          context.handleConnectionClose
+        );
+        connection.addListener(
+          ConnectionEvent.COMPLETE,
+          context.handleConnectionClose
+        );
+        connection.addListener(
+          ConnectionEvent.ERROR,
+          context.handleConnectionClose
+        );
+      },
+
+      /**
+       * Removes Listeners from Connection
+       * 
+       * @param {AbstractConnection} connection 
+       */
+      removeListeners(connection) {
+        connection.removeListener(
+          ConnectionEvent.ABORT,
+          context.handleConnectionClose
+        );
+        connection.removeListener(
+          ConnectionEvent.COMPLETE,
+          context.handleConnectionClose
+        );
+        connection.removeListener(
+          ConnectionEvent.ERROR,
+          context.handleConnectionClose
+        );
+      },
+
+      process(list) {
+
+        // preparation: split list into open & waiting
+        let openList = list.filter(listItem => 
+          listItem.connection.state === AbstractConnection.OPEN
+        );
+        let waitingList = list.filter(listItem => 
+          listItem.connection.state === AbstractConnection.INIT
+        );
+
+        // first: close connections if needed
+        while (openList.size > maxConnections) {
+          const openItem = openList.last();
+          openList = openList.pop();
+          openItem.connection.close();
+        }
+
+        //second: open more connections if possible
+        while (waitingList.size && openList.size < maxConnections) {
+          const waitingItem = waitingList.first();
+          waitingList = waitingList.shift();
+          context.openConnection(waitingItem.connection);
+          openList = openList.push(waitingItem);
+        }
+
+        //third: sort openList
+        openList = openList.sortBy(listItem => -1 * listItem.priority);
+
+        //fourth: close low priority connections in favor of higher prio ones
+        while (
+          waitingList.size && openList.size &&
+          waitingList.first().priority * threshold > openList.last().priority
+        ) {
+          const openItem = openList.last();
+          const waitingItem = waitingList.first();
+
+          // close open one
+          openList = openList.pop();
+          openItem.connection.close();
+
+          // open waiting
+          waitingList = waitingList.shift();
+          context.openConnection(waitingItem.connection);
+
+          //this time we need to sort for the next iteration…
+          openList = openList.push(waitingItem).sortBy(listItem => -1 * listItem.priority);
+        }
+
+        //return and merge them again.
+        return openList.concat(waitingList);
       }
     };
 
-    this.enqueue = this.enqueue.bind(context);
-    this.dequeue = this.dequeue.bind(context);
+    this.schedule = this.schedule.bind(context);
+    this.list = this.list.bind(context);
   }
 
   /**
-   * Queues given connection with given priority
+   * Schedules given connection with given priority
    *
    * @this ConnectionManager~Context
    * @param {AbstractConnection} connection – connection to queue
    * @param {Integer} [priority] – optional change of priority
+   * @return {void} - returns nothing.
    */
-  enqueue(connection, priority) {
+  schedule(connection, priority) {
+    // we got a closed connection, nothing to do.
     if (connection.state === AbstractConnection.CLOSED) {
       return;
     }
 
-    if (connection.state === AbstractConnection.INIT) {
-      this.waitingConnections = this.waitingConnections.enqueue(
-        connection,
-        priority
-      );
+    // create a new QueueItem to have the correct default priority
+    const item = new ConnectionQueueItem(connection, priority);
+
+    // add listeners if connection is new
+    if (!item.connection.listeners(ConnectionEvent.ABORT).find(listener => 
+      listener === this.handleConnectionAbort)
+    ) {
+      this.addListeners(item.connection);
+    } else {
+      // else remove item from list
+      this.list = this.list.filter(listItem => !listItem.equals(item));
     }
 
-    if (connection.state === AbstractConnection.OPEN) {
-      this.openConnections = this.openConnections.enqueue(connection);
-    }
-
-    connection.addListener(ConnectionEvent.ABORT, this.handleConnectionAbort);
-
-    connection.addListener(
-      ConnectionEvent.COMPLETE,
-      this.handleConnectionComplete
+    // add, sort and process
+    this.list = this.process(
+      this.list
+        .push(item)
+        .sortBy(listItem => -1 * listItem.priority)
     );
 
-    connection.addListener(ConnectionEvent.ERROR, this.handleConnectionError);
-
-    this.next();
+    return;
   }
+
 
   /**
-   * Dequeues given connection
-   *
+   * returns a copy of the current list with 
+   * a reduced representation of the connections
+   * 
    * @this ConnectionManager~Context
-   * @param {AbstractConnection} connection – connection to dequeue
+   * @return {List}
    */
-  dequeue(connection) {
-    this.waitingConnections = this.waitingConnections.dequeue(connection);
-    this.openConnections = this.openConnections.dequeue(connection);
-
-    connection.removeListener(
-      ConnectionEvent.ABORT,
-      this.handleConnectionAbort
-    );
-    connection.removeListener(
-      ConnectionEvent.COMPLETE,
-      this.handleConnectionComplete
-    );
-    connection.removeListener(
-      ConnectionEvent.ERROR,
-      this.handleConnectionError
-    );
-
-    if (connection.state === AbstractConnection.OPEN) {
-      connection.close();
-    }
-
-    this.next();
+  list() {
+    return this.list.map(listItem => {
+      return {
+        connection: {
+          url: listItem.connection.url,
+          state: listItem.connection.state
+        }, 
+        priority: listItem.priority
+      };
+    });
   }
+
 }
