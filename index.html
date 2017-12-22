@@ -7,45 +7,44 @@
     <title>Document</title>
 </head>
 <body>
-    Offene Connections: <span id=open>0</span><br />
-    Erstellte Connections: <span id=create>0</span><br />
-    Abgebrochene Connections: <span id=abort>0</span><br />
-    Fehlerhafte Connections: <span id=error>0</span><br />
-    Abgeschlossene Connections: <span id=complete>0</span><br />
-    <br />
-    CM.open: <span id=cmopen>0</span><br />
-    CM.waiting: <span id=cmwaiting>0</span><br />
-    CM.lowestOpenPriority: <span id=cmlowopen>0</span><br />
-    CM.highestWaitingPriorty: <span id=cmhighwait>0</span><br />
-    <br />
-    Last Created Connection:<br />
-    URL: <span id=lasturl>0</span><br />
-    State: <span id=laststate>0</span><br />
-    <br />
     random interval: <br />
     <input type=number id=randomint value=500 style="width:3rem" /><br />
     <button id=randomstart>start</button>
-    <button id=randomstop>stop</button>
+    <button id=randomstop>stop</button><br />
     <br />
-    add instantly:<br />
-    <input type=number id=floodcount value=20 style="width:3rem" /><br />
-    <button id=flood>flood</button><br />
+    add init connection:<br />
+    prio: <input type=number id=initprio value=50 min=1 max=100 style="width:3rem" />
+    <button id=initadd>add init</button><br />
     <br />
     add open connection:<br />
-    prio: <input type=number id=openprio value=50 min=1 max=100 style="width:3rem" /><br />
+    prio: <input type=number id=openprio value=50 min=1 max=100 style="width:3rem" />
     <button id=openadd>add open</button><br />
     <br />
-    reschedule last connection:<br />
+    reschedule last open connection:<br />
     prio: <input type=number id=resprio value=50 min=1 max=100 style="width:3rem" /><br />
     <button id=res>reschedule</button><br />
     <br />
-    Advanced Config:<br />
+
+    Created: <span id=created>Loading…</span><br />
+    Alive: <span id=alive>Loading…</span><br />
+    <br />
+    CM.open: <span id=cmopen>Loading…</span><br />
+    CM.waiting: <span id=cmwaiting>Loading…</span><br />
+    CM.lowestOpenPriority: <span id=cmlowopen>Loading…</span><br />
+    CM.highestWaitingPriorty: <span id=cmhighwait>Loading…</span><br />
+    CM.openList:<br />
+    <p id=openlist>Loading…</p>
+    CM.waitingList:<br />
+    <p id=waitinglist>Loading…</p>
+    <br />
+    
+    <!--Advanced Config:<br />
     count: <input type=number id=advcount value=20 style="width:3rem" /> |
     priority: <input type=number id=advprio value=20 style="width:3rem" /> |
     open: <input type=checkbox id=advopen /> |
     retry: <input type=checkbox id=advretry /> |
     retry prio: <input type=number id=advretryprio value=20 style="width:3rem" /><br />
-    <button id=advadd>add</button><br />
+    <button id=advadd>add</button><br />-->
     <script src="bundle.js"></script>
 </body>
 </html>

@@ -3,89 +3,104 @@ import { default as ConnectionManager } from "./ConnectionManager";
 import { setInterval, setTimeout } from "timers";
 import { List } from "immutable";
 
-const connectionManager = new ConnectionManager();
-const connectionArray = [];
-const stats = {
-    open:0,
-    create:0,
-    abort:0,
-    error:0,
-    complete:0
-}
 
-let connectionsIdAutoIncrement = 0;
-let intval;
+const connectionManager = new ConnectionManager(5);
+let connectionsList = List();
+let randtimer;
+let runner = 0;
 
 function updateHtml() {
     
-    Object.keys(stats).forEach(function(key) {
-        document.getElementById(key).innerHTML = stats[key];
-    });
-    document.getElementById("cmopen").innerHTML = connectionManager.open();
-    document.getElementById("cmwaiting").innerHTML = connectionManager.waiting();
-    document.getElementById("cmlowopen").innerHTML = connectionManager.lowestOpenPriority();
-    document.getElementById("cmhighwait").innerHTML = connectionManager.highestWaitingPriority();
+    const openList = connectionManager.open();
+    const waitingList = connectionManager.waiting();
 
-    if(connectionArray[connectionsIdAutoIncrement-1]) {
-        document.getElementById("lasturl").innerHTML = connectionArray[connectionsIdAutoIncrement-1].url;
-        document.getElementById("laststate").innerHTML = connectionArray[connectionsIdAutoIncrement-1].state.toString();
+    document.getElementById("cmopen").innerHTML = openList.size;
+    document.getElementById("cmwaiting").innerHTML = waitingList.size;
+
+    if(connectionsList.size) {
+        document.getElementById("alive").innerHTML = connectionsList.size;
+    } else {
+        document.getElementById("alive").innerHTML = 0;
+    }
+
+    document.getElementById("created").innerHTML = runner;
+
+    if(openList.size) {
+        document.getElementById("cmlowopen").innerHTML = openList.last().priority;
+        document.getElementById("openlist").innerHTML = openList.reduce((prev, cur, index) => {
+            return prev.concat(cur.connection.url);
+        }, []).join("<br>");
+    } else {
+        document.getElementById("cmlowopen").innerHTML = "0";
+        document.getElementById("openlist").innerHTML = "no open connections";
+    }
+
+    if(waitingList.size) {
+        document.getElementById("cmhighwait").innerHTML = waitingList.first().priority;
+        document.getElementById("waitinglist").innerHTML = waitingList.slice(0, 10).reduce((prev, cur, index) => {
+            return prev.concat(cur.connection.url);
+        }, []).join("<br>");
+    } else {
+        document.getElementById("cmhighwait").innerHTML = "0";
+        document.getElementById("waitinglist").innerHTML = "no waiting connections";
     }
 }
-setInterval(updateHtml, 100);
 
-function createConnection(priority, index, retry = 0) {
-    const connection = new XHRConnection(`test.html?c=${Date.now()}-prio:${priority}-index:${index}`);
-    stats.create++;
-    connection.on(ConnectionEvent.OPEN, event => {
-        stats.open++;
-    });
+function createConnection(slug, priority) {
+    const details = `${slug}-${priority}`;
+    const connection = new XHRConnection(`test.html?c=${details}`);
+    
     connection.on(ConnectionEvent.ABORT, event => {
-        stats.open--;
-        stats.abort++;
-        if(retry) connectionManager.schedule(createConnection(priority, index, retry--), priority);
+        connectionsList = connectionsList.filter(listConnection => {
+            if(listConnection == event.target) {
+                console.log(listConnection, event.target, listConnection !== event.target);
+            }
+            return listConnection !== event.target
+        });
+        setTimeout(() => connectionManager.schedule(createConnection(slug, priority), priority), 1000);
     });
     connection.on(ConnectionEvent.ERROR, event => {
-        stats.open--;
-        stats.error++;
+        connectionsList = connectionsList.filter(listConnection => listConnection !== event.target);
     });
     connection.on(ConnectionEvent.COMPLETE, event => {
-        stats.open--;
-        stats.complete++;
+        connectionsList = connectionsList.filter(listConnection => listConnection !== event.target);
     });
-    connectionArray[index] = connection;
+    connectionsList = connectionsList.push(connection);
     return connection;
 }
 
 
 
+
+setInterval(updateHtml, 100);
+
+
+
+
 document.getElementById("randomstop").addEventListener("click", function() {
-    window.clearInterval(intval);
+    window.clearTimeout(randtimer);
+    randtimer = false;
 });
 document.getElementById("randomstart").addEventListener("click", function() {
-    if (intval) return;
-    intval = window.setInterval(function() {
+    function nexttimer() {
         const priority = Math.ceil(Math.random()*100);
-        connectionManager.schedule(createConnection(priority, connectionsIdAutoIncrement++, 3), priority);
-    }, document.getElementById("randomint").value);
-});
-document.getElementById("flood").addEventListener("click", function() {
-    const cnt = document.getElementById("floodcount").value;
-    for(let r = 0; r<cnt; r++) {
-        const priority = Math.ceil(Math.random()*100);
-        connectionManager.schedule(createConnection(priority, connectionsIdAutoIncrement++, 3), priority);
+        connectionManager.schedule(createConnection(runner++, priority), priority);
+        randtimer = window.setTimeout(nexttimer, document.getElementById("randomint").value)
     }
+    if (randtimer) return;
+    nexttimer();
+});
+document.getElementById("initadd").addEventListener("click", function() {
+    connectionManager.schedule(createConnection(runner++, priority), parseInt(document.getElementById("initprio").value));
 });
 
 document.getElementById("openadd").addEventListener("click", function() {
-    const priority = parseInt(document.getElementById("openprio").value);
-    const connection = createConnection(priority, connectionsIdAutoIncrement++, 3);
-    connection.open();
-    connectionManager.schedule(connection, priority);
+    connectionManager.schedule(createConnection(runner++, priority).open(), parseInt(document.getElementById("openprio").value));
 });
 
 document.getElementById("res").addEventListener("click", function() {
-    const priority = parseInt(document.getElementById("resprio").value);
-    const connection = connectionArray[connectionsIdAutoIncrement-1];
-    if(connection.state === AbstractConnection.CLOSED) { alert(`${connectionsIdAutoIncrement-1} is already closed`); return; }
-    connectionManager.schedule(connection, priority);
+    const connection = connectionsList.filter(listConnection => listConnection.state === AbstractConnection.OPEN).last();
+    if(connection.state !== AbstractConnection.CLOSED) {
+        connectionManager.schedule(connection, parseInt(document.getElementById("resprio").value));
+    }
 });

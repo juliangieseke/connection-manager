@@ -63,9 +63,6 @@ export default class ConnectionManager {
         }
 
         context.openConnection(item.connection);
-
-        // next please
-        context.next();
       },
 
       /**
@@ -88,7 +85,7 @@ export default class ConnectionManager {
         context.removeListeners(item.connection);
 
         // start next connection from queue (if any)
-        context.next();
+        setTimeout(() => context.list = context.process(context.list), 0);
       },
 
       /**
@@ -98,47 +95,6 @@ export default class ConnectionManager {
        */
       handleConnectionError: event =>
         context.handleConnectionComplete(event),
-
-      /**
-       * Closes low prio connections until a slot is free
-       *
-       * @param {int} newItem
-       * @return {int} - number of free slots
-       * @TODO needs a better name…
-       * @TODO maybe we can either get rid of it in oush or use it in update?
-       */
-      requestFreeSlot(newItem) {
-
-        // get last (lowest priority) open connection in list
-        const item = context.list.findLast(listItem =>
-          listItem.connection.state === AbstractConnection.OPEN);
-        
-        // no open item.
-        if (!item) {
-          return true;
-        }
-
-        // not all slots occupied
-        if(context.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) < maxConnections) {
-          return true;
-        }
-
-        // close least important open connection, 
-        // if the given one is more important
-        if (
-          item.priority < newItem.priority * threshold
-        ) {
-          // remove connection from list
-          context.list = context.list.filter(
-            listItem => !listItem.equals(item)
-          );
-          setTimeout(() => item.connection.close(), 0);
-          return true;
-        }
-
-        // no free slot available
-        return false;
-      },
 
       /**
        * Opens a Connection
@@ -191,114 +147,78 @@ export default class ConnectionManager {
         );
       },
 
-      /**
-       * Updates the Priority of Index
-       * 
-       * @param {int} index - index of existing (open or init) connection
-       * @param {int} priority - new priority
-       */
-      update(index, priority) {
-        const item = context.list.get(index);
+      process(list) {
+        //now the first {maxConnection} items should be open
+        let openList = list.filter(listItem => listItem.connection.state === AbstractConnection.OPEN);
+        let waitingList = list.filter(listItem => listItem.connection.state === AbstractConnection.INIT);
+        
+        // first, close connections if needed
+        while(openList.size > maxConnections) {
+          const openItem = openList.last();
+          openList = openList.pop();
 
-        // well…
-        if (item.priority === priority) {
-          return;
+          openItem.connection.close();
         }
 
-        // if connection is open,
-        if(item.connection.state === AbstractConnection.OPEN) {
-          // if prio is decreased,
-          if (priority < item.priority &&
-            // all slots are occupied
-            context.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN) === maxConnections &&
-            // and there is a waiting connection with higher prio
-            context.list.find(listItem => listItem.connection.state === AbstractConnection.INIT).priority * threshold > priority
-          ) {
-            // close async
-            setTimeout(() => item.connection.close(), 0);
-            // remove connection from list
-            context.list = context.list.filter(
-              listItem => !listItem.equals(item)
-            );
-            return;
-          } else {
-            // update & sort list
-            // => see return statement below
-          }
+        //second, open more connections if possible
+        while(waitingList.size && openList.size < maxConnections) {
+          const waitingItem = waitingList.first();
+          waitingList = waitingList.shift();
+          context.addListeners(waitingItem.connection);
+
+          context.openConnection(waitingItem.connection);
+          openList = openList.push(waitingItem);
         }
 
-        // connection was still in queue
-        if(item.connection.state === AbstractConnection.INIT) {
-          // if priority increased, 
-          if (priority > item.priority &&
-            // and there is a free slot
-            context.requestFreeSlot(item)
-          ) {
-            // open this one
-            context.openConnection(item.connection);
-            // update & sort list
-            // => see return statement below
-          } else {
-            // update & sort list
-            // => see return statement below
-          }
+        //quickly sort openList
+        openList = openList.sortBy(listItem => -1 * listItem.priority);
+
+        //third, close low priority connections in favor of higher prio ones
+        while(
+          waitingList.size && openList.size &&
+          waitingList.first().priority * threshold > openList.last().priority
+        ) {
+          const openItem = openList.last();
+          const waitingItem = waitingList.first();
+
+          // close open one
+          openList = openList.pop();
+          openItem.connection.close();
+
+          // open waiting
+          waitingList = waitingList.shift();
+          context.addListeners(waitingItem.connection);
+          context.openConnection(waitingItem.connection);
+          openList = openList.push(waitingItem);
         }
 
-        // update & sort list
-        context.list = context.list
-          .update(index, listItem => new ConnectionQueueItem(item.connection, priority))
-          .sortBy(listItem => -1 * listItem.priority);
+        //sort again
+        openList = openList.sortBy(listItem => -1 * listItem.priority);
+
+        //and merge them again.
+        return openList.concat(waitingList);
       },
 
-      /**
-       * Pushes a new item into the list
-       * 
-       * @param {ConnectionQueueItem} item - new open or init connection
-       */
-      push(item) {
+      push(list, item) {
 
-        // it is possible to open connections on your own
-        // and then add them to the manager, if this happened and 
-        // there is no free slot, we have to kill them now…
-        if (item.connection.state === AbstractConnection.OPEN && 
-          !context.requestFreeSlot(item)
-        ) {
-          // we need to close the connection async.
-          setTimeout(() => item.connection.close(), 0);
-          // return untouched list
-          return;
-        } else {
-          // connection.state is INIT or free slot available
-          // we can add listeners and store the connection
+        if(item.connection.state === AbstractConnection.OPEN) {
+          //add listeners
+          this.addListeners(item.connection);
         }
         
-        // add listeners for handling it - these will 
-        // call context.next() when the connection is closed.
-        context.addListeners(item.connection);
-
-        // if connection is not opened yet
-        if (item.connection.state === AbstractConnection.INIT && 
-          // and a free slot is available
-          context.requestFreeSlot(item)
-        ) {
-          // open it
-          context.openConnection(item.connection);
-        } else {
-          // connection was open (see above) or no free slot available
-        }
-
-        // store it in list
-        context.list = context.list
-          .push(item)
-          .sortBy(listItem => -1 * listItem.priority);
+        return context.process(
+          list
+            .filter(listItem => !listItem.equals(item))
+            .push(item)
+            .sortBy(listItem => -1 * listItem.priority)
+        );
       }
     };
 
     this.schedule = this.schedule.bind(context);
+
     this.open = this.open.bind(context);
     this.waiting = this.waiting.bind(context);
-    this.lowestOpenPriority = this.lowestOpenPriority.bind(context);
-    this.highestWaitingPriority = this.highestWaitingPriority.bind(context);
   }
 
   /**
@@ -317,33 +237,19 @@ export default class ConnectionManager {
 
     // create a new QueueItem to have the correct default priority
     const item = new ConnectionQueueItem(connection, priority);
-
-    // if the connection is already queued, we need to update it
-    const index = this.list.findIndex(listItem => listItem.equals(item));
-
-    if (index >= 0) {
-      this.update(index, priority);
-    } else {
-      this.push(item);
-    }
+    
+    setTimeout(() => this.list = this.push(this.list, item), 0);
+    
     return;
   }
 
   
   
   open() {
-    return this.list.count(listItem => listItem.connection.state === AbstractConnection.OPEN);
+    return this.list.filter(listItem => listItem.connection.state === AbstractConnection.OPEN);
   }
-  lowestOpenPriority() {
-    const item = this.list.findLast(listItem => listItem.connection.state === AbstractConnection.OPEN);
-    return item ? item.priority : 0;
+  waiting() {
+    return this.list.filter(listItem => listItem.connection.state === AbstractConnection.INIT);
   }
 
-  waiting() {
-    return this.list.count(listItem => listItem.connection.state === AbstractConnection.INIT);
-  }
-  highestWaitingPriority() {
-    const item = this.list.find(listItem => listItem.connection.state === AbstractConnection.INIT);
-    return item ? item.priority : 0;
-  }
 }
