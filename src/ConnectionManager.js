@@ -2,14 +2,32 @@ import { List } from "immutable";
 import { AbstractConnection, ConnectionEvent } from "@dcos/connections";
 import ConnectionQueueItem from "./ConnectionQueueItem";
 
+const PRIORITY_STUDENT = 1;
+const PRIORITY_BATCH = 2;
+const PRIORITY_INTERACTIVE = 3;
+const PRIORITY_SYSTEM = 4;
+
 export default class ConnectionManager {
+
+  static get PRIORITY_STUDENT() {
+    return PRIORITY_STUDENT;
+  }
+  static get PRIORITY_BATCH() {
+    return PRIORITY_BATCH;
+  }
+  static get PRIORITY_INTERACTIVE() {
+    return PRIORITY_INTERACTIVE;
+  }
+  static get PRIORITY_SYSTEM() {
+    return PRIORITY_SYSTEM;
+  }
+
   /**
    * Initializes an Instance of ConnectionManager
    *
    * @param {int} maxConnections – max open connections
-   * @param {float} threshold - only kill connections with a priority < newPriority * threshold
    */
-  constructor(maxConnections = 6, maxAge = 6000, maxAutoPriority = 3) {
+  constructor(maxConnections = 5, maxAutoPriority = PRIORITY_INTERACTIVE) {
     /**
      * Private Context
      *
@@ -38,65 +56,26 @@ export default class ConnectionManager {
       interval: null,
 
       /**
-       * @property {function} handleConnectionComplete
-       * @name ConnectionManager~Context#handleConnectionComplete
-       * @param {ConnectionEvent} event
+       * @property {ConnectionQueue} paused
+       * @description paused
+       * @name ConnectionManager~Context#paused
        */
-      handleConnectionClose: event => {
-        // remove listeners from connection
-        context.removeListeners(event.target);
-      },
+      paused: false,
+
+      /**
+       * @property {ConnectionQueue} token
+       * @description token
+       * @name ConnectionManager~Context#token
+       */
+      token: null,
 
       /**
        * Opens a Connection
        * 
        * @param {AbstractConnection} connection
        */
-      openConnection(connection) {
-        // add listeners
-        context.addListeners(connection);
-        // open connection (later: with token)
-        connection.open();
-      },
-
-      /**
-       * Adds Listeners to Connection
-       * 
-       * @param {AbstractConnection} connection 
-       */
-      addListeners(connection) {
-        connection.addListener(
-          ConnectionEvent.ABORT,
-          context.handleConnectionClose
-        );
-        connection.addListener(
-          ConnectionEvent.COMPLETE,
-          context.handleConnectionClose
-        );
-        connection.addListener(
-          ConnectionEvent.ERROR,
-          context.handleConnectionClose
-        );
-      },
-
-      /**
-       * Removes Listeners from Connection
-       * 
-       * @param {AbstractConnection} connection 
-       */
-      removeListeners(connection) {
-        connection.removeListener(
-          ConnectionEvent.ABORT,
-          context.handleConnectionClose
-        );
-        connection.removeListener(
-          ConnectionEvent.COMPLETE,
-          context.handleConnectionClose
-        );
-        connection.removeListener(
-          ConnectionEvent.ERROR,
-          context.handleConnectionClose
-        );
+      setupConnection(connection) {
+        connection.open({Authentication: `Bearer ${this.token}`});
       },
 
       /**
@@ -112,39 +91,57 @@ export default class ConnectionManager {
           .filter(listItem => 
             listItem.connection.state === AbstractConnection.INIT
           )
-          // increase priority on old items
-          .map((listItem) => {
-            if (
-              listItem.priority < maxAutoPriority && 
-              listItem.created < Date.now() - maxAge
-            ) {
-              return new ConnectionQueueItem(listItem.connection, listItem.priority+1);
-            }
-            return listItem;
-          })
+          // this code would increase priority on old items, after they lived in the line for more then 30s.
+          // It is possible better to do this for every connection itself instead of doing it globally
+          // here, porbably not all connections need to increase their priority.
+          // .map((listItem) => {
+          //   if (listItem.priority >= maxAutoPriority) {
+          //     return listItem;
+          //   }
+
+          //   if(listItem.created < Date.now() - 30000) {
+          //     return new ConnectionQueueItem(listItem.connection, listItem.priority+1);
+          //   }
+
+          //   return listItem;
+          // })
           // and sort
           .sortBy(listItem => -1 * listItem.priority);
-
-        // open a connection if possible
-        if (waitingList.size && openList.size < maxConnections) {
-          context.openConnection(waitingList.first().connection);
+        
+        // if there are free slots, start as much tasks as possible
+        // this has to be a while because otherwise only one connection
+        // per second would be opened when the tab is inactive.
+        // see https://stackoverflow.com/questions/15871942/how-do-browsers-pause-change-javascript-when-tab-or-window-is-not-active
+        while(waitingList.size && openList.size < maxConnections) {
+          const waitingItem = waitingList.first();
+          waitingList = waitingList.shift();
+          context.setupConnection(waitingItem.connection);
+          openList = openList.push(waitingItem);
         }
 
-        // merge them again.
+        // merge the lists again (this removes closed connections).
         context.list = openList.concat(waitingList);
 
         // still waiting items? 
-        if(waitingList.size > 0) {
-          const delay = (maxConnections * openList.size);
+        if(!context.paused && waitingList.size > 0) {
+          const delay = 250;
           context.interval = setTimeout(
             context.loop, 
             delay
-          ) 
+          );
         } else {
           context.interval = null;
         }
       },
 
+      /**
+     * schedules connection in loop
+     *
+     * @this ConnectionManager~Context
+     * @param {AbstractConnection} connection – connection to queue
+     * @param {Integer} [priority] – optional change of priority
+     * @return {AbstractConnection} - the scheduled connection
+     */
       schedule(connection, priority) {
 
         // create a new QueueItem to have the correct default priority
@@ -161,15 +158,25 @@ export default class ConnectionManager {
           .push(item);
 
         // running loop? otherwise start it
-        if(!context.interval) {
-          context.loop();
+        if(!context.paused && !context.interval) {
+          context.interval = setTimeout(
+            context.loop, 
+            0
+          );
         }
 
-        
+        return connection;
       }
     };
 
     this.schedule = this.schedule.bind(context);
+    
+    this.setToken = this.setToken.bind(context);
+
+    this.pause = this.pause.bind(context);
+    this.resume = this.resume.bind(context);
+
+    this.list = this.list.bind(context);
   }
 
   /**
@@ -178,8 +185,58 @@ export default class ConnectionManager {
    * @this ConnectionManager~Context
    * @param {AbstractConnection} connection – connection to queue
    * @param {Integer} [priority] – optional change of priority
+   * @return {AbstractConnection} - the scheduled connection
    */
   schedule(connection, priority) {
-    this.schedule(connection, priority);
+    return this.schedule(connection, priority);
+  }
+
+  /**
+   * pauses the loop processing
+   *
+   * @this ConnectionManager~Context
+   */
+  pause() { 
+    this.paused = true;
+    if(this.interval) {
+      window.clearTimeout(this.interval);
+      this.interval = null
+    }
+  }
+
+  /**
+   * resumes the loop processing
+   *
+   * @this ConnectionManager~Context
+   */
+  resume() { 
+    this.paused = false;
+    if(!this.paused && !this.interval && this.list.filter(listItem => 
+        listItem.connection.state === AbstractConnection.INIT
+    )) {
+      this.interval = setTimeout(
+        this.loop, 
+        0
+      );
+    }
+  }
+
+  /**
+   * Updates stored token to authenticate requests
+   * 
+   * @param {string} token - valid token
+   */
+  setToken(token) {
+    this.token = token;
+  }
+
+  /**
+   * debugging method, returns list
+   *
+   * @this ConnectionManager~Context
+   * @return {List} - connectionList
+   */
+  list() { 
+    return this.list;
   }
 }
