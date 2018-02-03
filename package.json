@@ -23,7 +23,7 @@
     "jest-cli": "^21.2.1"
   },
   "dependencies": {
-    "@dcos/connections": "^0.1.0",
+    "@dcos/connections": "juliangieseke/connections",
     "immutable": "^3.8.2"
   }
 }
