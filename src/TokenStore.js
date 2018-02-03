@@ -1,5 +1,3 @@
-import AbstractConnection from "@dcos/connections";
-
 export default class TokenStore {
   constructor() {
     const context = {
@@ -8,7 +6,7 @@ export default class TokenStore {
     };
 
     this.store = this.store.bind(context);
-    this.get = this.get.bind(context);
+    this.getHeader = this.getHeader.bind(context);
   }
 
   store(token = null) {
