@@ -109,7 +109,7 @@ export default class ConnectionManager {
 
         // if we got a (now) closed connection, nothing to do.
         if (connection.state === AbstractConnection.CLOSED) {
-          return;
+          return connection;
         }
 
         // add, sort and process
